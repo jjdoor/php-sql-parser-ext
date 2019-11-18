@@ -1,5 +1,5 @@
 {
-	"name": "yyfjj/PHPSQLParserExt",
+	"name": "jjdoor/PHPSQLParserExt",
 	"version":"1.0",
 	"description": "this is a libriary for db oprate",
 	"autoload": {
