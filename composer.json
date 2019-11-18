@@ -1,0 +1,10 @@
+{
+	"name": "yyfjj/PHPSQLParserExt",
+	"version":"1.0",
+	"description": "this is a libriary for db oprate",
+	"autoload": {
+		"psr-4": {
+			"PHPSQLParserExt\\": "src/"
+		}
+    }
+}
