@@ -16,6 +16,7 @@
 
 namespace PHPSQLParserExt;
 
+use PHPSQLParser\PHPSQLParser;
 use think\Db;
 
 class PHPSQLParserExt
@@ -101,12 +102,15 @@ class PHPSQLParserExt
     {
         $current = current($this->_sqlInfo);
         if ($this->_sqlAction == 'insert') {
-            $this->_tableName[] = $current[1]['no_quotes']['parts'][0];
+            $tmpTableName = $current[1]['no_quotes']['parts'][0];
+        } elseif ($this->_sqlAction == 'show') {
+            $tmpTableName = current($this->_sqlInfo)[2]['table'];
         } else {
 //            $this->_tableName[] = $current[0]['no_quotes']['parts'][0];
-            $this->_tableName[] = $this->_sqlInfo['FROM'][0]['table'];
+            $tmpTableName = $this->_sqlInfo['FROM'][0]['table'];
         }
 
+        $this->_tableName[] = trim(trim($tmpTableName), "`");
         return $this->_tableName;
     }
 
@@ -130,6 +134,8 @@ class PHPSQLParserExt
             return $this->parseUpdate();
         } elseif ($this->_sqlAction == 'insert') {
             return $this->parseInsert();
+        } elseif ($this->_sqlAction == 'select') {
+            return $this->parseSelect();
         } else {
             return $this->_sql;
         }
@@ -230,8 +236,14 @@ class PHPSQLParserExt
             $paramComment[$matches[1][0]] = trim($matches[3][0], ",'");
         }
         if (strpos(trim($v), 'ENGINE') !== false) {
-            preg_match("/.*COMMENT='(.+)'/", $v, $m);
-            $tableComment = trim($m[1], ",'");
+            $tableComment = '';
+            $PHPSQLParser = new PHPSQLParser($p[0]['Create Table']);
+            $parse = $PHPSQLParser->parsed;
+            if (count($parse['TABLE']['options']) === 5) {
+                $tableComment = $parse['TABLE']['options'][4]['sub_tree']['2']['base_expr'];
+            }
+//            preg_match("/.*COMMENT='(.+)'/", $v, $m);
+//            $tableComment = trim($m[1], ",'");
         }
 
         return array('table' => $tableComment, 'param' => $paramComment);
@@ -239,6 +251,9 @@ class PHPSQLParserExt
 
     private function getCreateTableSql($tableName)
     {
+//        if (empty($tableName)) {
+//            echo $this->_sql;
+//        }
         $sql = "SHOW CREATE TABLE `" . $tableName . "`";
         $queryObj = Db::query($sql);
 //        $queryObj = Model()->query($sql);
@@ -293,6 +308,51 @@ class PHPSQLParserExt
             }
         }
         $table .= "  </tr>";
+        $table .= "</table>";
+        return $table;
+    }
+
+    function parseSelect()
+    {
+        $tmp = preg_split("#\s+#", $this->_sql, -1, PREG_SPLIT_NO_EMPTY);
+//        $r['table'] = $tmp[2];
+//        $r['action'] = $tmp[0];
+//        $param = trim(trim($tmp[3], "("), ")");
+//        $value = trim(trim($tmp[5], "("), ")");
+//        $paramArr = explode(",", $param);
+//        $valueArr = explode(",", $value);
+
+        //refactor
+        //                    [base_expr] => (`shop_id` , `attr_name` , `sort` , `is_show` , `addtime`)
+        $sqlInfo = $this->_sqlInfo;
+//        $paramArr = call_user_func(function () use ($sqlInfo) {
+//            $arr = explode(",", trim($this->_sqlInfo['INSERT'][2]['base_expr'], "()"));
+//            $arr = array_map(function ($a) {
+//                return trim(trim($a), "`");
+//            }, $arr);
+//            return $arr;
+//        });
+//        $valueArr = call_user_func(function () use ($sqlInfo) {
+//            $arr = explode(",", trim($this->_sqlInfo['VALUES'][0]['base_expr'], "()"));
+//            $arr = array_map(function ($a) {
+//                return trim(trim($a), "`");
+//            }, $arr);
+//            return $arr;
+//        });
+
+        $comment = $this->getComment($this->_tableName[0]);
+        $table = "选择表{$this->_tableName[0]}({$comment['table']})<table border='1' cellspacing='0' cellpadding='1'>";
+        $table .= "  <tr>";
+        foreach ($comment['param'] as $k => $v) {
+            $table .= "    <th>" . $k . "</th>";
+        }
+        $table .= "  </tr>";
+        $table .= "  <tr>";
+        foreach ($comment['param'] as $k => $v) {
+            $table .= "    <th>" . $v . "</th>";
+        }
+        $table .= "  </tr>";
+
         $table .= "</table>";
         return $table;
     }
