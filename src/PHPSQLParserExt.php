@@ -15,6 +15,9 @@
  */
 
 namespace PHPSQLParserExt;
+
+use think\Db;
+
 class PHPSQLParserExt
 {
     /**
@@ -34,7 +37,7 @@ class PHPSQLParserExt
      */
     private $_sqlInfo = array();
 
-    private $_debug = false;
+    private $_debug = true;
     private $_debugFile = 'parsesql.log';
     private $_exception = false;//当为true表示发生异常，所有数据不通过cache处理
 
@@ -100,7 +103,8 @@ class PHPSQLParserExt
         if ($this->_sqlAction == 'insert') {
             $this->_tableName[] = $current[1]['no_quotes']['parts'][0];
         } else {
-            $this->_tableName[] = $current[0]['no_quotes']['parts'][0];
+//            $this->_tableName[] = $current[0]['no_quotes']['parts'][0];
+            $this->_tableName[] = $this->_sqlInfo['FROM'][0]['table'];
         }
 
         return $this->_tableName;
@@ -236,7 +240,8 @@ class PHPSQLParserExt
     private function getCreateTableSql($tableName)
     {
         $sql = "SHOW CREATE TABLE `" . $tableName . "`";
-        $queryObj = Model()->query($sql);
+        $queryObj = Db::query($sql);
+//        $queryObj = Model()->query($sql);
         return $queryObj;
     }
 
@@ -249,6 +254,25 @@ class PHPSQLParserExt
         $value = trim(trim($tmp[5], "("), ")");
         $paramArr = explode(",", $param);
         $valueArr = explode(",", $value);
+
+        //refactor
+        //                    [base_expr] => (`shop_id` , `attr_name` , `sort` , `is_show` , `addtime`)
+        $sqlInfo = $this->_sqlInfo;
+        $paramArr = call_user_func(function () use ($sqlInfo) {
+            $arr = explode(",", trim($this->_sqlInfo['INSERT'][2]['base_expr'], "()"));
+            $arr = array_map(function ($a) {
+                return trim(trim($a), "`");
+            }, $arr);
+            return $arr;
+        });
+        $valueArr = call_user_func(function () use ($sqlInfo) {
+            $arr = explode(",", trim($this->_sqlInfo['VALUES'][0]['base_expr'], "()"));
+            $arr = array_map(function ($a) {
+                return trim(trim($a), "`");
+            }, $arr);
+            return $arr;
+        });
+
         $comment = $this->getComment($this->_tableName[0]);
         $table = "插入表{$this->_tableName[0]}({$comment['table']})<table border='1' cellspacing='0' cellpadding='1'>";
         $table .= "  <tr>";
