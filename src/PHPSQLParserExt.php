@@ -1,17 +1,15 @@
 <?php
 /**
- * $parsesql = new \Parsesql\Parsesql($message);
- * $new_message = $parsesql->doIt();
- *
- * $limit = array('insert','update');
- * if(in_array($parsesql->getAction(),$limit)){
- * $message = '[INFO]'.$message."<br>";
- * $message .= '[解析]'.$new_message."<br>";
- * }else{
- * $message = '[INFO]'.$message."<br>";
- * }
- *
- * self::writeLog($message,$fileName.".html");
+ * eg：
+ * //第一步：必须配置config.php文件
+ * //第二步：非必要步骤，写在index.php入口文件，用于记录访问url
+ * $fileName = "sql.log";//这里的文件名要和配置文件的文件名一致
+ * $message = '[<font style="color: red">URL</font>]' . strip_tags($_SERVER['REQUEST_URI']) . "\r\n<br>";
+ * error_log($message, 3, $fileName . ".html");
+ * //第三步：代码写在系统需要记录日志地方
+ * $PHPSQLParserExt = new PHPSQLParserExt($sql);
+ * $new_message = $PHPSQLParserExt->doIt();
+ * //第四步：浏览器打开看看吧
  */
 
 namespace PHPSQLParserExt;
@@ -20,6 +18,7 @@ use PHPSQLParser\PHPSQLParser;
 
 class PHPSQLParserExt
 {
+    static private $config;
     /**
      * @var string 需要解析的sql语句
      */
@@ -35,14 +34,24 @@ class PHPSQLParserExt
     /**
      * @var sql语句解析后的数组信息
      */
-    private $_sqlInfo = array();
-
-    private $_debug = true;
-    private $_debugFile = 'parsesql.log';
-    private $_exception = false;//当为true表示发生异常，所有数据不通过cache处理
+    private $_sqlInfo = array();//当为true表示发生异常，所有数据不通过cache处理
+    private $_exception = false;
+    private $_config;
+    /**
+     * @var sql日志
+     */
+    private $_log = '';
 
     function __construct(string $sql)
     {
+        //头部文件
+//        $this->_debugInfo($head, '');
+
+        if (empty(self::$config)) {
+            self::$config = include_once("config.php");
+        }
+        $this->__mysqli = new  \mysqli(self::$config['hostname'], self::$config['username'], self::$config['password'], self::$config['database']);
+
         $this->_sql = $sql;
         try {
             $this->_init();
@@ -56,8 +65,6 @@ class PHPSQLParserExt
     {
         #格式化sql
         $this->_formate();
-        $this->_debugInfo("/***********************************************/\n");
-        $this->_debugInfo($this->_sql, "sql:");
         #解析sql
         $parse = new \PHPSQLParser\PHPSQLParser($this->_sql);
         $this->_sqlInfo = $parse->parsed;
@@ -65,8 +72,6 @@ class PHPSQLParserExt
         $this->_getActionFromSql();
         #获取表名
         $this->getTableName();
-
-        $this->_debugInfo($this->_sqlAction, "action:");
     }
 
     private function _formate()
@@ -75,11 +80,6 @@ class PHPSQLParserExt
     }
 
     #首尾去空格并去除回车和换行符
-
-    private function _debugInfo($var, $tips = "提示:")
-    {
-        $this->_debug && error_log($tips . print_r($var, true) . "\n", 3, $this->_debugFile);
-    }
 
     /**
      * 选取第一个单词作为动作
@@ -93,8 +93,6 @@ class PHPSQLParserExt
     {
         $current_key = key($this->_sqlInfo);
         $this->_sqlAction = strtolower($current_key);
-
-        return $this->_sqlAction;
     }
 
     function getTableName()
@@ -105,7 +103,6 @@ class PHPSQLParserExt
         } elseif ($this->_sqlAction == 'show') {
             $tmpTableName = current($this->_sqlInfo)[2]['table'];
         } elseif ($this->_sqlAction == 'update') {
-//            $this->_tableName[] = $current[0]['no_quotes']['parts'][0];
             $tmpTableName = $this->_sqlInfo['UPDATE'][0]['table'];
         } else {
             $tmpTableName = $this->_sqlInfo['FROM'][0]['table'];
@@ -113,6 +110,11 @@ class PHPSQLParserExt
 
         $this->_tableName[] = trim(trim($tmpTableName), "`");
         return $this->_tableName;
+    }
+
+    private function _debugInfo($var, $tips = "提示:")
+    {
+        self::$config['debug'] && error_log($tips . print_r($var, true) . "\n<br>", 3, self::$config['debug_file']);
     }
 
     function getRunStatus()
@@ -132,14 +134,19 @@ class PHPSQLParserExt
     function doIt()
     {
         if ($this->_sqlAction == 'update') {
-            return $this->parseUpdate();
+            $log = $this->parseUpdate();
         } elseif ($this->_sqlAction == 'insert') {
-            return $this->parseInsert();
+            $log = $this->parseInsert();
         } elseif ($this->_sqlAction == 'select') {
-            return $this->parseSelect();
+            $log = $this->parseSelect();
         } else {
-            return $this->_sql;
+            $log = $this->_sql;
         }
+        if (in_array($this->_sqlAction, self::$config['action'])) {
+            $this->_debugInfo($this->_sql, "[SQL:]");
+            $this->_debugInfo($log, "");
+        }
+        return $log;
     }
 
     function parseUpdate()
@@ -151,38 +158,6 @@ class PHPSQLParserExt
             $param_value = $v['sub_tree'][2]['base_expr'];
             $t[$param_name] = $param_value;
         }
-
-        /*$parseSql = preg_split("#\s+#", $this->_sql, -1, PREG_SPLIT_NO_EMPTY);*/
-//        $r['table'] = $tmp[2];
-//        $r['action'] = $tmp[0];
-//        $sql = "UPDATE `haoyebao_admin` AS `admin` SET admin_id = '1', admin_login_num = '606', admin_login_time = '1525310479' WHERE admin_id = '1'";
-
-//        $sql ="UPDATE `haoyebao_store_member_recharge_order` SET `status`='20',`updated`='1524908518' WHERE ( `id` = '375' )";
-
-//        Array
-//        (
-//            [0] => UPDATE
-//            [1] => `haoyebao_store_member_recharge_order`
-//            [2] => SET
-//            [3] => `status`='20',`updated`='1524908518'
-//            [4] => WHERE
-//            [5] => (
-//            [6] => `id`
-//            [7] => =
-//            [8] => '375'
-//            [9] => )
-//        )
-
-
-        /*$value = explode(",",$parseSql[3]);
-        foreach($value as $k=>$v){
-            list($a1,$a2) = explode("=",$v);
-            $a1 = trim($a1,"`");
-            $a2 = trim($a2,"'");
-            $t[$a1] = $a2;
-
-        }*/
-
         $tmp = $this->getComment($this->_tableName[0]);
 
         $table = "更新表{$this->_tableName[0]}({$tmp['table']})<table border='1' cellspacing='0' cellpadding='1'>";
@@ -243,8 +218,6 @@ class PHPSQLParserExt
             if (count($parse['TABLE']['options']) === 5) {
                 $tableComment = $parse['TABLE']['options'][4]['sub_tree']['2']['base_expr'];
             }
-//            preg_match("/.*COMMENT='(.+)'/", $v, $m);
-//            $tableComment = trim($m[1], ",'");
         }
 
         return array('table' => $tableComment, 'param' => $paramComment);
@@ -252,37 +225,20 @@ class PHPSQLParserExt
 
     private function getCreateTableSql($tableName)
     {
-        $this->__dbHost = "127.0.0.1";
-        $this->__dbName = "mdlr";
-        $this->__dbUser = "root";
-        $this->__dbPwd = "";
-        $this->__mysqli = new  \mysqli($this->__dbHost, $this->__dbUser, $this->__dbPwd, $this->__dbName);
         $sql = "SHOW CREATE TABLE `" . $tableName . "`";
         $queryObj = $this->__mysqli->query($sql);
         $row = (array)$queryObj->fetch_object();
         return $row;
-//        if (empty($tableName)) {
-//            echo $this->_sql;
-//        }
-        $sql = "SHOW CREATE TABLE `" . $tableName . "`";
-        $queryObj = Db($tableName)->query($sql);
-//        $queryObj = Db::query($sql);
-//        $queryObj = Model()->query($sql);
-        return $queryObj;
     }
 
     function parseInsert()
     {
         $tmp = preg_split("#\s+#", $this->_sql, -1, PREG_SPLIT_NO_EMPTY);
-//        $r['table'] = $tmp[2];
-//        $r['action'] = $tmp[0];
         $param = trim(trim($tmp[3], "("), ")");
         $value = trim(trim($tmp[5], "("), ")");
         $paramArr = explode(",", $param);
         $valueArr = explode(",", $value);
 
-        //refactor
-        //                    [base_expr] => (`shop_id` , `attr_name` , `sort` , `is_show` , `addtime`)
         $sqlInfo = $this->_sqlInfo;
         $paramArr = call_user_func(function () use ($sqlInfo) {
             $arr = explode(",", trim($this->_sqlInfo['INSERT'][2]['base_expr'], "()"));
@@ -328,7 +284,7 @@ class PHPSQLParserExt
         $tmp = preg_split("#\s+#", $this->_sql, -1, PREG_SPLIT_NO_EMPTY);
         $sqlInfo = $this->_sqlInfo;
         $comment = $this->getComment($this->_tableName[0]);
-        $table = "选择表{$this->_tableName[0]}({$comment['table']})<table border='1' cellspacing='0' cellpadding='1'>";
+        $table = "表名：{$this->_tableName[0]}({$comment['table']})<table border='1' cellspacing='0' cellpadding='1'>";
         $table .= "  <tr>";
         foreach ($comment['param'] as $k => $v) {
             $table .= "    <th>" . $k . "</th>";
@@ -343,11 +299,4 @@ class PHPSQLParserExt
         $table .= "</table>";
         return $table;
     }
-
-    function setSql($sql)
-    {
-        $this->_sql = $sql;
-        return $this;
-    }
-
 }
