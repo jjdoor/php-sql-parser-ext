@@ -17,7 +17,6 @@
 namespace PHPSQLParserExt;
 
 use PHPSQLParser\PHPSQLParser;
-use think\Db;
 
 class PHPSQLParserExt
 {
@@ -105,8 +104,10 @@ class PHPSQLParserExt
             $tmpTableName = $current[1]['no_quotes']['parts'][0];
         } elseif ($this->_sqlAction == 'show') {
             $tmpTableName = current($this->_sqlInfo)[2]['table'];
-        } else {
+        } elseif ($this->_sqlAction == 'update') {
 //            $this->_tableName[] = $current[0]['no_quotes']['parts'][0];
+            $tmpTableName = $this->_sqlInfo['UPDATE'][0]['table'];
+        } else {
             $tmpTableName = $this->_sqlInfo['FROM'][0]['table'];
         }
 
@@ -216,7 +217,7 @@ class PHPSQLParserExt
     {
         $p = $this->getCreateTableSql($tableName);
 
-        $param = preg_split("#\n\s#", $p[0]['Create Table'], -1, PREG_SPLIT_NO_EMPTY);
+        $param = preg_split("#\n\s#", $p['Create Table'], -1, PREG_SPLIT_NO_EMPTY);
         $paramComment = array();
         #第一步取出字段和注释对照,尚未解决默认值存在情况
         foreach ($param as $k => $v) {
@@ -237,7 +238,7 @@ class PHPSQLParserExt
         }
         if (strpos(trim($v), 'ENGINE') !== false) {
             $tableComment = '';
-            $PHPSQLParser = new PHPSQLParser($p[0]['Create Table']);
+            $PHPSQLParser = new PHPSQLParser($p['Create Table']);
             $parse = $PHPSQLParser->parsed;
             if (count($parse['TABLE']['options']) === 5) {
                 $tableComment = $parse['TABLE']['options'][4]['sub_tree']['2']['base_expr'];
@@ -251,11 +252,21 @@ class PHPSQLParserExt
 
     private function getCreateTableSql($tableName)
     {
+        $this->__dbHost = "127.0.0.1";
+        $this->__dbName = "mdlr";
+        $this->__dbUser = "root";
+        $this->__dbPwd = "";
+        $this->__mysqli = new  \mysqli($this->__dbHost, $this->__dbUser, $this->__dbPwd, $this->__dbName);
+        $sql = "SHOW CREATE TABLE `" . $tableName . "`";
+        $queryObj = $this->__mysqli->query($sql);
+        $row = (array)$queryObj->fetch_object();
+        return $row;
 //        if (empty($tableName)) {
 //            echo $this->_sql;
 //        }
         $sql = "SHOW CREATE TABLE `" . $tableName . "`";
-        $queryObj = Db::query($sql);
+        $queryObj = Db($tableName)->query($sql);
+//        $queryObj = Db::query($sql);
 //        $queryObj = Model()->query($sql);
         return $queryObj;
     }
@@ -315,31 +326,7 @@ class PHPSQLParserExt
     function parseSelect()
     {
         $tmp = preg_split("#\s+#", $this->_sql, -1, PREG_SPLIT_NO_EMPTY);
-//        $r['table'] = $tmp[2];
-//        $r['action'] = $tmp[0];
-//        $param = trim(trim($tmp[3], "("), ")");
-//        $value = trim(trim($tmp[5], "("), ")");
-//        $paramArr = explode(",", $param);
-//        $valueArr = explode(",", $value);
-
-        //refactor
-        //                    [base_expr] => (`shop_id` , `attr_name` , `sort` , `is_show` , `addtime`)
         $sqlInfo = $this->_sqlInfo;
-//        $paramArr = call_user_func(function () use ($sqlInfo) {
-//            $arr = explode(",", trim($this->_sqlInfo['INSERT'][2]['base_expr'], "()"));
-//            $arr = array_map(function ($a) {
-//                return trim(trim($a), "`");
-//            }, $arr);
-//            return $arr;
-//        });
-//        $valueArr = call_user_func(function () use ($sqlInfo) {
-//            $arr = explode(",", trim($this->_sqlInfo['VALUES'][0]['base_expr'], "()"));
-//            $arr = array_map(function ($a) {
-//                return trim(trim($a), "`");
-//            }, $arr);
-//            return $arr;
-//        });
-
         $comment = $this->getComment($this->_tableName[0]);
         $table = "选择表{$this->_tableName[0]}({$comment['table']})<table border='1' cellspacing='0' cellpadding='1'>";
         $table .= "  <tr>";
