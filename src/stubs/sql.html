@@ -1,0 +1,72 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+        "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+    <title>Title</title>
+</head>
+<body>
+<!-- CSS goes in the document HEAD or added to your external stylesheet -->
+<style type="text/css">
+    table.hovertable {
+        font-family: verdana,arial,sans-serif;
+        font-size:11px;
+        color:#333333;
+        border-width: 1px;
+        border-color: #999999;
+        border-collapse: collapse;
+    }
+    table.hovertable th {
+        background-color:#c3dde0;
+        border-width: 1px;
+        padding: 8px;
+        border-style: solid;
+        border-color: #a9c6c9;
+    }
+    table.hovertable tr {
+        background-color:#d4e3e5;
+    }
+    table.hovertable td {
+        border-width: 1px;
+        padding: 8px;
+        border-style: solid;
+        border-color: #a9c6c9;
+    }
+</style>
+
+<!-- Table goes in the document BODY -->
+
+<font style="font-size: 12px;">[SQL:]{{comment}}{{sql}}</font>
+<table class="hovertable">
+    <tr onmouseover="this.style.backgroundColor='#ffff66';" onmouseout="this.style.backgroundColor='#d4e3e5';">
+        {% for key,item in list %}
+        <td>{{item.param}}</td>
+        {% endfor %}
+    </tr>
+    <tr onmouseover="this.style.backgroundColor='#ffff66';" onmouseout="this.style.backgroundColor='#d4e3e5';">
+        {% for key,item in list %}
+        <td>{{item.comment}}</td>
+        {% endfor %}
+    </tr>
+    <tr onmouseover="this.style.backgroundColor='#ffff66';" onmouseout="this.style.backgroundColor='#d4e3e5';">
+        {% for key,item in list %}
+        <td>{{item.default}}</td>
+        {% endfor %}
+    </tr>
+    {% if list[0]['insert_value'] is defined %}
+    <tr onmouseover="this.style.backgroundColor='#ffff66';" onmouseout="this.style.backgroundColor='#d4e3e5';">
+        {% for key,item in list %}
+        <td>{{item.insert_value}}</td>
+        {% endfor %}
+    </tr>
+    {% endif %}
+    {% if list[0]['update_value'] is defined %}
+    <tr onmouseover="this.style.backgroundColor='#ffff66';" onmouseout="this.style.backgroundColor='#d4e3e5';">
+        {% for key,item in list %}
+        <td>{{item.update_value}}</td>
+        {% endfor %}
+    </tr>
+    {% endif %}
+
+</table>
+</body>
+</html>

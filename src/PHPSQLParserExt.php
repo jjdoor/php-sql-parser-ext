@@ -10,6 +10,23 @@
  * $PHPSQLParserExt = new PHPSQLParserExt($sql);
  * $new_message = $PHPSQLParserExt->doIt();
  * //第四步：浏览器打开看看吧
+ * THINKPHP5配置方法
+ * thinkphp\library\think\log\driver\File.php的save方法内的foreach ($log as $type => $val) {这一行下增加即可，注意命名空间也要引入
+ * call_user_func(function()use($type,$val){
+if($type != 'sql'){
+return false;
+}
+array_map(function($sql){
+if(substr($sql,0,7) != '[ SQL ]'){
+return false;
+}
+$begin_position = stripos($sql,']');
+$end_position = strrpos($sql,'[');
+$sql = substr($sql,($begin_position+1),($end_position-$begin_position-1));
+$PHPSQLParserExt = new PHPSQLParserExt($sql);
+$PHPSQLParserExt->doIt();
+},$val);
+});
  */
 
 namespace PHPSQLParserExt;
@@ -36,7 +53,7 @@ class PHPSQLParserExt
      */
     private $_sqlInfo = array();//当为true表示发生异常，所有数据不通过cache处理
     private $_exception = false;
-    private $_config;
+    private $_twig;
     /**
      * @var sql日志
      */
@@ -44,8 +61,9 @@ class PHPSQLParserExt
 
     function __construct(string $sql)
     {
-        //头部文件
-//        $this->_debugInfo($head, '');
+        $str = __DIR__ . DIRECTORY_SEPARATOR.'stubs/sql.html';
+        $loader = new \Twig_Loader_Filesystem(__DIR__ .DIRECTORY_SEPARATOR. 'stubs');
+        $this->_twig = new \Twig_Environment($loader);
 
         if (empty(self::$config)) {
             self::$config = include_once("config.php");
@@ -60,6 +78,12 @@ class PHPSQLParserExt
             $this->_debugInfo(print_r($e->__toString(), true), '异常内容');
         }
     }
+
+//    function __destruct()
+//    {
+//        echo $this->_twig->render('sql.html', $this->_render);
+
+//    }
 
     private function _init()
     {
@@ -112,39 +136,38 @@ class PHPSQLParserExt
         return $this->_tableName;
     }
 
-    private function _debugInfo($var, $tips = "提示:")
+    private function _debugInfo($var, $tips = "")
     {
-        self::$config['debug'] && error_log($tips . print_r($var, true) . "\n<br>", 3, self::$config['debug_file']);
-    }
-
-    function getRunStatus()
-    {
-        if ($this->_exception) {
-            return false;
-        } else {
-            return true;
-        }
+        self::$config['debug'] && error_log($tips . print_r($var, true) . "\n<br>", 3,__DIR__ . DIRECTORY_SEPARATOR.self::$config['debug_file']);
     }
 
     function getAction()
     {
         return $this->_sqlAction;
     }
+    protected function stub(){
+        $str = __DIR__ . '/stubs/sql.html';
+        return $str;
+    }
 
     function doIt()
     {
         if ($this->_sqlAction == 'update') {
             $log = $this->parseUpdate();
+            $echo = $this->_twig->render('sql.html', $log);
         } elseif ($this->_sqlAction == 'insert') {
             $log = $this->parseInsert();
+            $echo = $this->_twig->render('sql.html', $log);
         } elseif ($this->_sqlAction == 'select') {
             $log = $this->parseSelect();
+            $echo = $this->_twig->render('sql.html', $log);
         } else {
             $log = $this->_sql;
         }
         if (in_array($this->_sqlAction, self::$config['action'])) {
-            $this->_debugInfo($this->_sql, "[SQL:]");
-            $this->_debugInfo($log, "");
+            if(isset($echo)){
+                $this->_debugInfo($echo);
+            }
         }
         return $log;
     }
@@ -156,76 +179,28 @@ class PHPSQLParserExt
             $param_name = $v['sub_tree'][0]['no_quotes']['parts'][0];
             //字段值
             $param_value = $v['sub_tree'][2]['base_expr'];
-            $t[$param_name] = $param_value;
+            $update[$param_name] = $param_value;
         }
-        $tmp = $this->getComment($this->_tableName[0]);
+        $tmp = $this->getCommentNew($this->_tableName[0]);
 
-        $table = "更新表{$this->_tableName[0]}({$tmp['table']})<table border='1' cellspacing='0' cellpadding='1'>";
-
-        $table .= "  <tr>";
-        foreach ($tmp['param'] as $k => $v) {
-            $table .= "    <td>" . $k . "</td>";
-        }
-        $table .= "  </tr>";
-
-        $table .= "  <tr>";
-        foreach ($tmp['param'] as $k => $v) {
-            if (isset($t[$k])) {
-                $table .= "    <td>" . $t[$k] . "</td>";
-            } else {
-                $table .= "    <td></td>";
+        $comment = $this->getCommentNew($this->_tableName[0]);
+        $return = [];
+        foreach ($comment['list'] as $k => $v){
+            $return[$k]['param'] = $v['param'];
+            $return[$k]['comment'] = $v['comment'];
+            $return[$k]['default'] = $v['default'];
+            if(isset($update[$v['param']])){
+                $return[$k]['update_value'] = $update[$v['param']];
+            }else{
+                $return[$k]['update_value'] = "";
             }
         }
-
-        $table .= "  </tr>";
-
-        $table .= "  <tr>";
-        foreach ($tmp['param'] as $k => $v) {
-            $table .= "    <td>" . $v . "</td>";
-        }
-        $table .= "  </tr>";
-        $table .= "</table>";
-        return $table;
-    }
-
-    function getComment($tableName)
-    {
-        $p = $this->getCreateTableSql($tableName);
-
-        $param = preg_split("#\n\s#", $p['Create Table'], -1, PREG_SPLIT_NO_EMPTY);
-        $paramComment = array();
-        #第一步取出字段和注释对照,尚未解决默认值存在情况
-        foreach ($param as $k => $v) {
-            if (strpos(trim($v), 'CREATE') === 0) {
-                continue;
-            }
-            if (strpos(trim($v), 'PRIMARY') === 0) {
-                continue;
-            }
-            if (strpos(trim($v), 'UNIQUE') === 0) {
-                continue;
-            }
-            if (strpos(trim($v), 'KEY') === 0) {
-                continue;
-            }
-            preg_match_all("/`([^`]+)`([^']+)(.*)/", $v, $matches);
-            $paramComment[$matches[1][0]] = trim($matches[3][0], ",'");
-        }
-        if (strpos(trim($v), 'ENGINE') !== false) {
-            $tableComment = '';
-            $PHPSQLParser = new PHPSQLParser($p['Create Table']);
-            $parse = $PHPSQLParser->parsed;
-            if (count($parse['TABLE']['options']) === 5) {
-                $tableComment = $parse['TABLE']['options'][4]['sub_tree']['2']['base_expr'];
-            }
-        }
-
-        return array('table' => $tableComment, 'param' => $paramComment);
+        return ['list'=>$return,'comment'=>$comment['comment'],'sql'=>$this->_sql];
     }
 
     private function getCreateTableSql($tableName)
     {
-        $sql = "SHOW CREATE TABLE `" . $tableName . "`";
+        $sql = "SHOW CREATE TABLE " . $tableName ;
         $queryObj = $this->__mysqli->query($sql);
         $row = (array)$queryObj->fetch_object();
         return $row;
@@ -233,12 +208,6 @@ class PHPSQLParserExt
 
     function parseInsert()
     {
-        $tmp = preg_split("#\s+#", $this->_sql, -1, PREG_SPLIT_NO_EMPTY);
-        $param = trim(trim($tmp[3], "("), ")");
-        $value = trim(trim($tmp[5], "("), ")");
-        $paramArr = explode(",", $param);
-        $valueArr = explode(",", $value);
-
         $sqlInfo = $this->_sqlInfo;
         $paramArr = call_user_func(function () use ($sqlInfo) {
             $arr = explode(",", trim($this->_sqlInfo['INSERT'][2]['base_expr'], "()"));
@@ -247,56 +216,55 @@ class PHPSQLParserExt
             }, $arr);
             return $arr;
         });
-        $valueArr = call_user_func(function () use ($sqlInfo) {
-            $arr = explode(",", trim($this->_sqlInfo['VALUES'][0]['base_expr'], "()"));
-            $arr = array_map(function ($a) {
-                return trim(trim($a), "`");
-            }, $arr);
-            return $arr;
-        });
+        $valueArr = $this->_sqlInfo['VALUES'][0]['data'];
+        $valueArr_New = array_map(function ($value){
+            return $value['base_expr'];
+        },$valueArr);
+        $new = array_combine($paramArr,$valueArr_New);
 
-        $comment = $this->getComment($this->_tableName[0]);
-        $table = "插入表{$this->_tableName[0]}({$comment['table']})<table border='1' cellspacing='0' cellpadding='1'>";
-        $table .= "  <tr>";
-        foreach ($paramArr as $k => $v) {
-            $table .= "    <th>" . trim($v, "	`") . "</th>";
-        }
-        $table .= "  </tr>";
-        $table .= "  <tr>";
-        foreach ($valueArr as $k => $v) {
-            $table .= "    <td>" . trim($v, "	'") . "</td>";
-        }
-        $table .= "  </tr>";
-
-        $table .= "  <tr>";
-        foreach ($paramArr as $k => $v) {
-            if (isset($comment['param'][trim($v, "	`")])) {
-                $table .= "    <td>" . $comment['param'][trim($v, "	`")] . "</td>";
+        $comment = $this->getCommentNew($this->_tableName[0]);
+        $return = [];
+        foreach ($comment['list'] as $k => $v){
+            $return[$k]['param'] = $v['param'];
+            $return[$k]['comment'] = $v['comment'];
+            $return[$k]['default'] = $v['default'];
+            if(isset($new[$v['param']])){
+                $return[$k]['insert_value'] = $new[$v['param']];
+            }else{
+                $return[$k]['insert_value'] = "";
             }
         }
-        $table .= "  </tr>";
-        $table .= "</table>";
-        return $table;
+        return ['list'=>$return,'comment'=>$comment['comment'],'sql'=>$this->_sql];
     }
 
-    function parseSelect()
-    {
-        $tmp = preg_split("#\s+#", $this->_sql, -1, PREG_SPLIT_NO_EMPTY);
-        $sqlInfo = $this->_sqlInfo;
-        $comment = $this->getComment($this->_tableName[0]);
-        $table = "表名：{$this->_tableName[0]}({$comment['table']})<table border='1' cellspacing='0' cellpadding='1'>";
-        $table .= "  <tr>";
-        foreach ($comment['param'] as $k => $v) {
-            $table .= "    <th>" . $k . "</th>";
-        }
-        $table .= "  </tr>";
-        $table .= "  <tr>";
-        foreach ($comment['param'] as $k => $v) {
-            $table .= "    <th>" . $v . "</th>";
-        }
-        $table .= "  </tr>";
+    function parseSelect(){
+        //可能多个表
+        $tableName = $this->_sqlInfo['FROM'][0]['table'];
+        $tableName = trim($tableName,"`");
+        $commentNew=$this->getCommentNew($tableName);
+        return $commentNew+['sql'=>$this->_sql];
+    }
 
-        $table .= "</table>";
-        return $table;
+    function getCommentNew($tableName)
+    {
+        $database=self::$config['database'];
+
+        $comm = [['param'=>"uid",'comment'=>'会员ID','default'=>null]];
+        $sql1 = "select COLUMN_NAME,COLUMN_DEFAULT,COLUMN_COMMENT from information_schema.`COLUMNS` where TABLE_SCHEMA='{$database}' and TABLE_NAME ='{$tableName}'";
+        $queryObj = $this->__mysqli->query($sql1);
+        $row1 = (array)$queryObj->fetch_all();
+
+        $list = array_map(function ($v){
+            $return = [];
+            $return['param'] = $v[0];
+            $return['default'] = $v[1];
+            $return['comment'] = $v[2];
+            return $return;
+        },$row1);
+
+        $sql2 = "select TABLE_COMMENT from information_schema.`TABLES` where TABLE_SCHEMA='{$database}' and TABLE_NAME='{$tableName}'";
+        $queryObj = $this->__mysqli->query($sql2);
+        $row2 = (array)$queryObj->fetch_array();
+        return ['comment' => $row2['TABLE_COMMENT'], 'list' => $list];
     }
 }
